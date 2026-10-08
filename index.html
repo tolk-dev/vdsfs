@@ -2,23 +2,27 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Отметка</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Segoe UI',system-ui,sans-serif;background:#eae8e4;color:#222;min-height:100vh}
-header{background:#dddbd7;border-bottom:1px solid #b8b6b2;padding:12px 16px;display:flex;justify-content:space-between}
-h1{font-size:18px}#clock{color:#555;font-size:14px}
-main{max-width:480px;margin:0 auto;padding:18px 14px}
+html{-webkit-text-size-adjust:100%;max-width:100%;overflow-x:hidden}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#eae8e4;color:#222;min-height:100vh;max-width:100%;overflow-x:hidden}
+header{background:#dddbd7;border-bottom:1px solid #b8b6b2;padding:calc(12px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) 12px calc(14px + env(safe-area-inset-left));display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+h1{font-size:17px}#clock{color:#555;font-size:13px}
+main{width:100%;max-width:480px;margin:0 auto;padding:18px calc(14px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left))}
 label{display:block;font-size:14px;color:#555;margin-bottom:6px}
-select{width:100%;padding:14px 10px;font-size:20px;border:1px solid #999;border-radius:10px;background:#fff}
-.status{margin:18px 0 12px;padding:14px;border-radius:10px;background:#fff;border-left:8px solid #2e9e4f;font-size:18px}
+select{width:100%;max-width:100%;padding:14px 10px;font-size:18px;border:1px solid #999;border-radius:10px;background:#fff}
+.who{background:#fff;border-radius:12px;padding:14px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.who-name{font-size:22px;font-weight:600;overflow-wrap:anywhere;min-width:0;flex:1}
+.link{border:0;background:none;color:#555;text-decoration:underline;font-size:14px;padding:8px 4px;cursor:pointer}
+.status{margin:16px 0 12px;padding:14px;border-radius:10px;background:#fff;border-left:8px solid #2e9e4f;font-size:17px;overflow-wrap:anywhere}
 .status.in{border-left-color:#d93a3a;background:#fff5f5}
-button.go{width:100%;height:110px;font-size:30px;font-weight:700;border:0;border-radius:16px;color:#fff;cursor:pointer}
+button.go{width:100%;height:clamp(84px,18vh,110px);font-size:clamp(24px,8vw,30px);font-weight:700;border:0;border-radius:16px;color:#fff;cursor:pointer;-webkit-tap-highlight-color:transparent}
 .arrive{background:#2e9e4f}.leave{background:#d93a3a}
 button.go:disabled{opacity:.5}
-.ok{margin-top:16px;padding:12px;border-radius:10px;background:#d8f0d2;color:#1f5c22;font-size:17px}
-.err{margin-top:16px;padding:12px;border-radius:10px;background:#fde0e0;color:#8a1f1f;font-size:15px}
+.ok{margin-top:16px;padding:12px;border-radius:10px;background:#d8f0d2;color:#1f5c22;font-size:16px;overflow-wrap:anywhere}
+.err{margin-top:16px;padding:12px;border-radius:10px;background:#fde0e0;color:#8a1f1f;font-size:15px;overflow-wrap:anywhere}
 .muted{color:#888;margin-top:20px}
 </style>
 </head>
@@ -27,30 +31,50 @@ button.go:disabled{opacity:.5}
 <main id="app"><p class="muted">Загрузка...</p></main>
 <script>
 const API_URL='https://script.google.com/macros/s/AKfycbwyvRiJEwII4EDTcNHLNgRqPPmqivdJVPGsdZqOjy0NjGpg8kSAvw25pnaEZSOR2-Ur/exec';
+const KEY='emp_name';
 
 const $=id=>document.getElementById(id);
 const p2=n=>String(n).padStart(2,'0');
 const hhmm=t=>{const d=new Date(t);return p2(d.getHours())+':'+p2(d.getMinutes());};
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// localStorage может быть недоступен (приватный режим) — не даём странице упасть
+const store={
+  get:k=>{try{return localStorage.getItem(k);}catch(e){return null;}},
+  set:(k,v)=>{try{localStorage.setItem(k,v);}catch(e){}},
+  del:k=>{try{localStorage.removeItem(k);}catch(e){}}
+};
 async function api(params){const r=await fetch(API_URL+'?'+new URLSearchParams(params));return r.json();}
 async function post(body){
   const r=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)});
   return r.json();
 }
 
-let staff=[], sel=localStorage.getItem('emp_name')||'', msg='', busy=false;
+let staff=[], sel=store.get(KEY)||'', msg='', busy=false, changing=false;
 
 function render(){
   const cur=staff.find(s=>s.name===sel);
   const inside=!!(cur&&cur.since);
-  $('app').innerHTML=
-    `<label for="sel">Выберите себя в списке</label>
-     <select id="sel"><option value="">— имя —</option>${staff.map(s=>
-       `<option value="${esc(s.name)}"${s.name===sel?' selected':''}>${esc(s.name)}</option>`).join('')}</select>`+
-    (cur?`<div class="status${inside?' in':''}">${inside?'Вы в цеху с '+hhmm(cur.since):'Вы вне цеха'}</div>
-     <button id="go" class="go ${inside?'leave':'arrive'}"${busy?' disabled':''}>${inside?'УШЁЛ':'ПРИШЁЛ'}</button>`:'')+
-    msg;
-  $('sel').onchange=()=>{sel=$('sel').value;localStorage.setItem('emp_name',sel);msg='';render();};
+  const pick=!cur||changing;
+  let h='';
+  if(pick){
+    h+=`<label for="sel">Выберите себя в списке</label>
+      <select id="sel"><option value="">— имя —</option>${staff.map(s=>
+        `<option value="${esc(s.name)}"${s.name===sel?' selected':''}>${esc(s.name)}</option>`).join('')}</select>`;
+    if(cur&&changing)h+=`<div style="margin-top:6px"><button class="link" id="cancel">Отмена</button></div>`;
+  }else{
+    h+=`<div class="who"><div class="who-name">${esc(sel)}</div><button class="link" id="notme">Это не я</button></div>
+      <div class="status${inside?' in':''}">${inside?'Вы в цеху с '+hhmm(cur.since):'Вы вне цеха. Поставьте отметку.'}</div>
+      <button id="go" class="go ${inside?'leave':'arrive'}"${busy?' disabled':''}>${inside?'УШЁЛ':'ПРИШЁЛ'}</button>`;
+  }
+  $('app').innerHTML=h+msg;
+
+  if($('sel'))$('sel').onchange=()=>{
+    sel=$('sel').value;changing=false;msg='';
+    if(sel)store.set(KEY,sel);else store.del(KEY);
+    render();
+  };
+  if($('notme'))$('notme').onclick=()=>{changing=true;msg='';render();};
+  if($('cancel'))$('cancel').onclick=()=>{changing=false;render();};
   if($('go'))$('go').onclick=async()=>{
     const prev=cur.since, want=inside?'out':'in';
     cur.since=inside?null:Date.now();          // кнопка меняется сразу
@@ -61,7 +85,7 @@ function render(){
       const w=r.action==='in'?'Приход':'Уход';
       if(r.action==='in'&&r.time)cur.since=r.time;
       msg=r.already?`<div class="ok">Уже отмечено ранее (${w.toLowerCase()})</div>`
-                   :`<div class="ok">${w} отмечен в ${hhmm(r.time)}. Спасибо!</div>`;
+                   :`<div class="ok">${w} отмечен в ${hhmm(r.time)}.</div>`;
     }catch(e){
       cur.since=prev;                          // откат, если не записалось
       msg='<div class="err">Не удалось отметить: '+esc(e.message)+'. Попробуйте ещё раз.</div>';
@@ -74,10 +98,12 @@ async function load(){
     const r=await api({action:'staff'});
     if(!r.ok)throw new Error(r.error);
     staff=r.staff;
+    // сохранённого имени больше нет в списке (человека убрали) — просим выбрать заново
+    if(sel&&staff.length&&!staff.some(s=>s.name===sel)){sel='';store.del(KEY);}
   }catch(e){msg='<div class="err">Нет связи с журналом: '+esc(e.message)+'</div>';}
   render();
 }
-function tick(){$('clock').textContent=p2(new Date().getDate())+'.'+p2(new Date().getMonth()+1)+' '+hhmm(Date.now());}
+function tick(){const d=new Date();$('clock').textContent=p2(d.getDate())+'.'+p2(d.getMonth()+1)+' '+hhmm(d);}
 setInterval(tick,1000);tick();
 load();
 </script>
